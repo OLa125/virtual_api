@@ -1,27 +1,39 @@
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import FileResponse
-from inference import run_virtual_tryon  # هنعمله كخطوة جايه
+from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from inference import run_virtual_tryon
 import shutil
 import os
 import uuid
 
 app = FastAPI()
 
+# السماح لكل origins (تقدري تضبطيها لاحقًا)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.post("/tryon")
-async def try_on(person_image: UploadFile = File(...), cloth_image: UploadFile = File(...)):
-    # احفظ الصور بشكل مؤقت
-    uid = str(uuid.uuid4())
-    os.makedirs(f"temp/{uid}", exist_ok=True)
-    person_path = f"temp/{uid}/person.jpg"
-    cloth_path = f"temp/{uid}/cloth.jpg"
-    
-    with open(person_path, "wb") as f:
-        shutil.copyfileobj(person_image.file, f)
-    with open(cloth_path, "wb") as f:
-        shutil.copyfileobj(cloth_image.file, f)
+async def tryon_api(person: UploadFile = File(...), cloth: UploadFile = File(...)):
+    # إنشاء مجلد مؤقت للصور
+    temp_dir = "temp_uploads"
+    os.makedirs(temp_dir, exist_ok=True)
 
-    # نفذ try-on باستخدام موديلك
-    output_path = run_virtual_tryon(person_path, cloth_path, output_dir=f"temp/{uid}")
+    person_path = os.path.join(temp_dir, f"{uuid.uuid4()}_person.jpg")
+    cloth_path = os.path.join(temp_dir, f"{uuid.uuid4()}_cloth.jpg")
 
-    # رجع الصورة الناتجة
-    return FileResponse(output_path, media_type="image/png")
+    # حفظ الملفات
+    with open(person_path, "wb") as buffer:
+        shutil.copyfileobj(person.file, buffer)
+
+    with open(cloth_path, "wb") as buffer:
+        shutil.copyfileobj(cloth.file, buffer)
+
+    # تنفيذ try-on
+    output_path = run_virtual_tryon(person_path, cloth_path)
+
+    # إرسال الصورة الناتجة
+    return {"result_image": output_path}
